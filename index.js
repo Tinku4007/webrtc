@@ -9,20 +9,12 @@ const app = express();
 const server = http.createServer(app);
 
 // Configure CORS
-app.use(cors({
-    origin: "http://localhost:5173", // Allow requests from this origin
-    methods: ["GET", "POST"],         // Allowed HTTP methods
-    credentials: true                 // Allow cookies and other credentials
-}));
+app.use(cors())
 
 app.use(bodyParser.json());
 
 const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:5173", // Allow requests from this origin for socket.io
-        methods: ["GET", "POST"],
-        credentials: true
-    }
+    cors: true,
 });
 
 const emailToSocketMapping = new Map();
