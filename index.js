@@ -9,41 +9,72 @@ const app = express();
 const server = http.createServer(app);
 
 // Configure CORS
-app.use(cors())
-
+app.use(cors());
 app.use(bodyParser.json());
 
 const io = new Server(server, {
-    cors: true,
+    cors: {
+        origin: "*", // Be more specific in production
+        methods: ["GET", "POST"]
+    },
 });
 
 const emailToSocketMapping = new Map();
-const soxketToEmailMapping = new Map();
+const socketToEmailMapping = new Map();
 
 io.on('connection', (socket) => {
-    console.log('new connection');
+    console.log('New connection established:', socket.id);
+
     socket.on("join-room", (data) => {
         const { roomId, emailId } = data;
-        console.log("user", emailId, "Joined room", roomId);
+        console.log(`User ${emailId} joined room ${roomId}`);
         emailToSocketMapping.set(emailId, socket.id);
-        soxketToEmailMapping.set(socket.id, emailId)
+        socketToEmailMapping.set(socket.id, emailId);
         socket.join(roomId);
-        socket.emit("joined-room", { roomId })
+        socket.emit("joined-room", { roomId });
         socket.broadcast.to(roomId).emit("user-joined", { emailId });
     });
 
-    socket.on("call-user", data => {
-        const { emailId, offer } = data
-        const fromEmail = soxketToEmailMapping.get(socket.id)
-        const socketId = emailToSocketMapping.get(emailId)
-        socket.to(socketId).emit('incomming-call', { from: fromEmail, offer })
-    })
+    socket.on("call-user", (data) => {
+        const { emailId, offer } = data;
+        const fromEmail = socketToEmailMapping.get(socket.id);
+        const toSocketId = emailToSocketMapping.get(emailId);
+        console.log(`Call from ${fromEmail} to ${emailId}`);
+        if (toSocketId) {
+            socket.to(toSocketId).emit('incoming-call', { from: fromEmail, offer });
+        } else {
+            console.log(`User ${emailId} not found`);
+            socket.emit('call-failed', { message: 'User not found or offline' });
+        }
+    });
 
     socket.on("call-accepted", (data) => {
-        const { emailId, ans } = data
-        const socketId = emailToSocketMapping.get(emailId)
-        socket.to(socketId).emit("call-accepted", { ans })
-    })
+        const { emailId, ans } = data;
+        const toSocketId = emailToSocketMapping.get(emailId);
+        console.log(`Call accepted by ${emailId}`);
+        if (toSocketId) {
+            socket.to(toSocketId).emit("call-accepted", { ans });
+        } else {
+            console.log(`User ${emailId} not found for call acceptance`);
+        }
+    });
+
+    socket.on("ice-candidate", (data) => {
+        const { emailId, candidate } = data;
+        const toSocketId = emailToSocketMapping.get(emailId);
+        console.log(`ICE candidate from ${socketToEmailMapping.get(socket.id)} to ${emailId}`);
+        if (toSocketId) {
+            socket.to(toSocketId).emit("ice-candidate", { candidate });
+        }
+    });
+
+    socket.on("disconnect", () => {
+        const emailId = socketToEmailMapping.get(socket.id);
+        console.log(`User disconnected: ${emailId}`);
+        emailToSocketMapping.delete(emailId);
+        socketToEmailMapping.delete(socket.id);
+        io.emit("user-disconnected", { emailId });
+    });
 });
 
 // Start the server
